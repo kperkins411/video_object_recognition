@@ -14,24 +14,14 @@ from scipy.special import expit
 
 IMAGE_SIZE=224
 font = cv2.FONT_HERSHEY_SIMPLEX
-topLeftCornerOfText = (20,20)
 fontScale = 1
 fontColor = (255, 255, 255)
 lineType = 2
 
-# We convert VOC's height/width into top-left/bottom-right, and switch x/y coords to be consistent with numpy.
-# do this after
-def hw_bb(bb):
-    return np.array([bb[1], bb[0], bb[3]+bb[1], bb[2]+bb[0]])
-def bb_hw(a):
-    return np.array([a[1],a[0],a[3]-a[1],a[2]-a[0]])
-def switchxy(a):
-    return np.array([a[1],a[0],a[3],a[2]])
-def reverse_x_dir(a, width):
-    return np.array([width-a[0],a[1],width-a[2],a[3]])
-
-
 class printFPS:
+    '''
+    used to calculate and print FPS
+    '''
     def __init__(self, cap):
         self.modulo = 10    #print every 10th frame
         self.i = 0
@@ -43,9 +33,68 @@ class printFPS:
             fps = self.cap.get(cv2.CAP_PROP_FPS)
             print("Frames per second using video.get(cv2.cv.CV_CAP_PROP_FPS): {0}".format(fps))
         self.i+=1
+
+def drawGrid(frame, height, width, ticks=4):
+    '''
+    just drws a grid on the frame
+    :param frame:
+    :param height:
+    :param width:
+    :param ticks:
+    :return:
+    '''
+    color = (155, 155, 155)
+    ptsize = 1
+
+    # first vertical
+    inc = int(width / ticks)
+    size = 0
+    for i in range(ticks):
+        cv2.line(frame, (size, 0), (size, height), color, ptsize)
+        size += inc
+
+    # then horizontal
+    inc = int(height / ticks)
+    size = 0
+    for i in range(ticks):
+        cv2.line(frame, (0, size), (width, size), color, ptsize)
+        size += inc
+
+# We convert VOC's height/width into top-left/bottom-right, and switch x/y coords to be consistent with numpy.
+# do this after
+def hw_bb(bb):
+    return np.array([bb[1], bb[0], bb[3]+bb[1], bb[2]+bb[0]])
+def bb_hw(a):
+    return np.array([a[1],a[0],a[3]-a[1],a[2]-a[0]])
+def switchxy(a):
+    '''
+    numpy and pillow revers x and y, this fixes it
+    :param a:
+    :return:
+    '''
+    return np.array([a[1],a[0],a[3],a[2]])
+def reverse_x_dir(a, width):
+    return np.array([width-a[0],a[1],width-a[2],a[3]])
+
+def convert_to_xy(cords, width, height):
+    '''
+    scales relative coord values (between 0 and 1)
+    by multiplying x*width and y*height
+    :param cords:
+    :return:
+    '''
+    for i in range(len(cords)):
+        if i % 2 == 0:
+            cords[i] *= width
+        else:
+            cords[i] *= height
+    return cords
+
+
+
+
 #######################################
 # get a list of categories
-
 import json
 
 # read cats.json into cats dict
@@ -60,25 +109,6 @@ def jsonKeys2str(x):
 
 cats = jsonKeys2str(cats)
 
-def denormalize(tensor, mean, std):
-    """Normalize a tensor image with mean and standard deviation.
-
-    See ``Normalize`` for more details.
-
-    Args:
-        tensor (Tensor): Tensor image of size (C, H, W) to be normalized.
-        mean (sequence): Sequence of means for each channel.
-        std (sequence): Sequence of standard deviations for each channely.
-
-    Returns:
-        Tensor: Normalized Tensor image.
-    """
-    # if not _is_tensor_image(tensor):
-    #     raise TypeError('tensor is not a torch image.')
-    # TODO: make efficient
-    for t, m, s in zip(tensor, mean, std):
-        t.mul_(s).add_(s)
-    return tensor
 #######################################
 #create model, load weights from training in pascal_voc
 
@@ -104,12 +134,8 @@ mod = nn.Sequential(*list(mod.children())[:-2])
 #weld the custom head onto model (how to know its 8?)
 mod.add_module("8",head_reg4)
 
-#look at model architecture (the layer names are replaced with numbers
+#look at model architecture (the layer names are replaced with numbers?)
 print(str(mod))   # layer names stripped
-
-# import fastai.model as famd
-# famd.model_summary(mod, (224,224))
-
 
 # load weights
 load_model(mod,'/home/keith/fastai2/fastai/data/VOCdevkit/VOC2007/models/reg1.h5')
@@ -128,51 +154,24 @@ data_transforms =  torchvision.transforms.Compose([
 #often on linux its installed as root
 cap = cv2.VideoCapture(0)
 
-#print FPS
-print_fps = printFPS(cap)
+# print FPS? If so uncomment this bit and the further bit in while loop below
+# print_fps = printFPS(cap)
 
-# Load an color image in grayscale
-def drawGrid(frame, height, width, ticks = 4):
-    color = (155,155,155)
-    ptsize = 1
-
-    # first vertical
-    inc = int(width/ticks)
-    size = 0
-    for i in range(ticks):
-        cv2.line(frame, (size, 0), (size, height), color, ptsize)
-        size+=inc
-
-    # then horizontal
-    inc = int(height / ticks)
-    size = 0
-    for i in range(ticks):
-        cv2.line(frame, (0, size), (width , size), color, ptsize)
-        size += inc
-
-
-def convert_to_xy(cords):
-    for i in range(len(cords)):
-        if i % 2 == 0:
-            cords[i] *= width
-        else:
-            cords[i] *= height
-    return cords
-
-
-img_no =0
+# img_no =0
 while(True):
-    # # Capture frame-by-frame
-    # ret, frame = cap.read()
-    #
-    # # wait for a good frame
-    # if (ret == False):
-    #     continue
+    # Capture frame-by-frame
+    ret, frame = cap.read()
+
+    # wait for a good frame
+    if (ret == False):
+        continue
 
     # You may need to convert the color.
     # img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    frame = cv2.imread(str(img_no)+".jpg")
-    img_no= (img_no+1)%21
+
+    # frame = cv2.imread(str(img_no)+".jpg")
+    # img_no= (img_no+1)%21
+
     img = frame
 
     # convert to PIL
@@ -198,39 +197,46 @@ while(True):
 
     #scale it to image width and height
     cords = expit((pred[0][:4]).detach())
-    print("coords:" + str(cords))
 
+    #output appears to be top left xy and bottom right xy
     cords2 = switchxy(cords)
-    # cords2 = bb_hw(cords) #height right and left side right
-    # cords2 = hw_bb(cords) #height right and left side right
 
-    drawGrid(frame, height, width)
+    #makes it easier to see where points should be
+    # drawGrid(frame, height, width)
 
-    # cords3 = (hw_bb(cords)) #very wrong
-    # print("preds:" + str((pred[0][:4])))
-    # print("coords:" + str(cords))
-    cords2 =convert_to_xy(cords2)
-    # cords2 = reverse_x_dir(cords2, width)
+    #scale bounding box by image size to get pixel values
+    cords2 =convert_to_xy(cords2, width, height)
 
-    print("coords2:" + str(cords2))
+    #debug info
+    print("coords:" + str(cords))   #show percentage of screen space
+    print("coords2:" + str(cords2)) #show pixel location
 
-    # draw bounding box
-    cv2.rectangle(frame, (int(cords2[0]), int(cords2[1])), (int(cords2[2]), int(cords2[3])), (0, 255, 0), 2)
+    #get class
+    cls_preds = (pred[0][4:]).detach().numpy()
+    cls = np.argmax(cls_preds)  #list loc
+    cls_val = cls_preds[cls] #val
 
-      #annotate class
-    c = np.argmax((pred[0][4:]).detach().numpy())
+    #calculate the average of the predictions
+    avg = np.average(cls_preds)
+    std_dev = np.std(cls_preds)
 
-    cv2.putText(frame, str(cats[c+1]),
-                topLeftCornerOfText,
-                font,
-                fontScale,
-                fontColor,
-                lineType)
+    #only show prediction if really sure (not sure if this is valid)
+    if (cls_val>(avg+2.5*std_dev)):
+        # draw bounding box
+        cv2.rectangle(frame, (int(cords2[0]), int(cords2[1])), (int(cords2[2]), int(cords2[3])), (255, 255, 255), 2)
+
+        cv2.putText(frame, str(cats[cls+1]),
+                    (int(cords2[0])+5, int(cords2[1]+25)),   #draw inside bounding box
+                    font,
+                    fontScale,
+                    fontColor,
+                    lineType)
+
 
     cv2.imshow('image', frame)
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
-    print_fps()
+    # print_fps()
 
 # When everything done, release the capture
 cap.release()
