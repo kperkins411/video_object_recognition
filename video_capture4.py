@@ -20,10 +20,16 @@ fontColor = (255, 255, 255)
 lineType = 2
 
 # We convert VOC's height/width into top-left/bottom-right, and switch x/y coords to be consistent with numpy.
+# do this after
 def hw_bb(bb):
-    return np.array([bb[1], bb[0], bb[3]+bb[1]-1, bb[2]+bb[0]-1])
+    return np.array([bb[1], bb[0], bb[3]+bb[1], bb[2]+bb[0]])
 def bb_hw(a):
-    return np.array([a[1],a[0],a[3]-a[1]+1,a[2]-a[0]+1])
+    return np.array([a[1],a[0],a[3]-a[1],a[2]-a[0]])
+def switchxy(a):
+    return np.array([a[1],a[0],a[3],a[2]])
+def reverse_x_dir(a, width):
+    return np.array([width-a[0],a[1],width-a[2],a[3]])
+
 
 class printFPS:
     def __init__(self, cap):
@@ -125,21 +131,49 @@ cap = cv2.VideoCapture(0)
 #print FPS
 print_fps = printFPS(cap)
 
-def bb_hw(a):
-    return np.array([a[1],a[0],a[3]-a[1]+1,a[2]-a[0]+1])
-def hw_bb(bb):
-    return np.array([bb[1], bb[0], bb[3]+bb[1]-1, bb[2]+bb[0]-1])
+# Load an color image in grayscale
+def drawGrid(frame, height, width, ticks = 4):
+    color = (155,155,155)
+    ptsize = 1
 
+    # first vertical
+    inc = int(width/ticks)
+    size = 0
+    for i in range(ticks):
+        cv2.line(frame, (size, 0), (size, height), color, ptsize)
+        size+=inc
+
+    # then horizontal
+    inc = int(height / ticks)
+    size = 0
+    for i in range(ticks):
+        cv2.line(frame, (0, size), (width , size), color, ptsize)
+        size += inc
+
+
+def convert_to_xy(cords):
+    for i in range(len(cords)):
+        if i % 2 == 0:
+            cords[i] *= width
+        else:
+            cords[i] *= height
+    return cords
+
+
+img_no =0
 while(True):
-    # Capture frame-by-frame
-    ret, frame = cap.read()
-
-    # wait for a good frame
-    if (ret == False):
-        continue
+    # # Capture frame-by-frame
+    # ret, frame = cap.read()
+    #
+    # # wait for a good frame
+    # if (ret == False):
+    #     continue
 
     # You may need to convert the color.
-    img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    # img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    frame = cv2.imread(str(img_no)+".jpg")
+    img_no= (img_no+1)%21
+    img = frame
 
     # convert to PIL
     im = Image.fromarray(img)
@@ -150,6 +184,7 @@ while(True):
     #convert to a batch size of 1
     im_t.unsqueeze_(0)
 
+    # cv2.imshow('image', im_t)
     #convert to a variable
     img_variable = Variable(im_t)
 
@@ -161,17 +196,28 @@ while(True):
     height = frame.shape[0]
     width = frame.shape[1]
 
+    #scale it to image width and height
     cords = expit((pred[0][:4]).detach())
+    print("coords:" + str(cords))
 
-    cords2 = bb_hw(cords) #height right and left side right
-    cords3 = (hw_bb(cords)) #very wrong
-    print("coordinates "+ str(cords2))
+    cords2 = switchxy(cords)
+    # cords2 = bb_hw(cords) #height right and left side right
+    # cords2 = hw_bb(cords) #height right and left side right
 
+    drawGrid(frame, height, width)
+
+    # cords3 = (hw_bb(cords)) #very wrong
+    # print("preds:" + str((pred[0][:4])))
+    # print("coords:" + str(cords))
+    cords2 =convert_to_xy(cords2)
+    # cords2 = reverse_x_dir(cords2, width)
+
+    print("coords2:" + str(cords2))
 
     # draw bounding box
-    cv2.rectangle(frame, (int(cords2[0]*width), int(cords2[1]*height)), (int(cords2[2]*width), int(cords2[3]*height)), (255, 0, 0), 2)
+    cv2.rectangle(frame, (int(cords2[0]), int(cords2[1])), (int(cords2[2]), int(cords2[3])), (0, 255, 0), 2)
 
-    #annotate class
+      #annotate class
     c = np.argmax((pred[0][4:]).detach().numpy())
 
     cv2.putText(frame, str(cats[c+1]),
